@@ -1,4 +1,4 @@
---ระบบกากๆมึงเข้ามาดูเหี้ยไรวะ
+--ระบบกากๆมึงเช้ามาดูอะไรวะ
 
 local Players = game:GetService("\80\108\97\121\101\114\115")
 local TweenService = game:GetService("\84\119\101\101\110\83\101\114\118\105\99\101")
@@ -84,7 +84,6 @@ _tbf.Position = UDim2.new(0,0,0.5,0)
 _tbf.BackgroundColor3 = Color3.fromRGB(10,10,20)
 _tbf.BorderSizePixel = 0
 
--- Dots
 local _dot1 = Instance.new("\70\114\97\109\101",_tb)
 _dot1.Size = UDim2.new(0,8,0,8)
 _dot1.Position = UDim2.new(0,12,0.5,-4)
@@ -278,6 +277,5 @@ _cb.MouseButton1Click:Connect(function()
     task.wait(0.25)
     _g:Destroy()
 end)
-
 
 loadstring(game:HttpGet("https://raw.githubusercontent.com/oop928/dan191/refs/heads/main/191"))()
