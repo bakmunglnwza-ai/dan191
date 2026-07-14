@@ -1,0 +1,507 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ====== CONFIG ======
+local AUDIO_FOLDER_PATH = {"RelicsXYZ", "Shared", "ServerAudio"}
+local ACCENT_COLOR = Color3.fromRGB(0, 0, 0)
+local ACCENT_HOVER_COLOR = Color3.fromRGB(45, 45, 45)
+local BG_COLOR = Color3.fromRGB(24, 24, 28)
+local ROW_COLOR = Color3.fromRGB(34, 34, 40)
+
+-- ไอดีเพลงที่ไม่ต้องการแสดงในลิสต์
+local BLACKLISTED_IDS = {
+	["9046863253"] = true,
+	["9047104752"] = true,
+	["9047105533"] = true,
+	["9047105108"] = true,
+	["9047104336"] = true,
+	["9047104650"] = true,
+	["9047104571"] = true,
+	["9047104411"] = true,
+	["9047104336"] = true,
+}
+
+-- ====== ROOT GUI ======
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MusicListGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- ====== TOGGLE BUTTON (60x60) ======
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Size = UDim2.fromOffset(60, 60)
+toggleButton.Position = UDim2.new(0.5, -30, 0.5, -30)
+toggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+toggleButton.BackgroundColor3 = BG_COLOR
+toggleButton.Text = ""
+toggleButton.TextScaled = true
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Parent = screenGui
+
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0.5, 0)
+
+-- เพิ่มรูปไอคอน
+local toggleImage = Instance.new("ImageLabel")
+toggleImage.Name = "IconImage"
+toggleImage.Size = UDim2.fromScale(1, 1)
+toggleImage.BackgroundTransparency = 1
+toggleImage.Image = "rbxassetid://11914981726"
+toggleImage.Parent = toggleButton
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Color = ACCENT_COLOR
+toggleStroke.Thickness = 2
+toggleStroke.Parent = toggleButton
+
+-- ====== DRAG FUNCTIONALITY (รองรับทั้งมือถือและพีซี) ======
+-- ฟังก์ชันกลางสำหรับทำให้ GuiObject ใดๆ ลากย้ายตำแหน่งได้
+local function makeDraggable(handle, target)
+	local dragging = false
+	local dragInputId = nil
+	local dragStart = nil
+	local positionStart = nil
+
+	handle.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragInputId = input.UserInputType
+			dragStart = input.Position
+			positionStart = target.Position
+
+			local connection
+			connection = input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					connection:Disconnect()
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input, gameProcessed)
+		if not dragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			local delta = input.Position - dragStart
+			target.Position = UDim2.new(
+				positionStart.X.Scale,
+				positionStart.X.Offset + delta.X,
+				positionStart.Y.Scale,
+				positionStart.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+makeDraggable(toggleButton, toggleButton)
+
+-- ====== MAIN FRAME (320x320, กึ่งกลางจอ) ======
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.fromOffset(320, 320)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.BackgroundColor3 = BG_COLOR
+mainFrame.BackgroundTransparency = 1
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = ACCENT_COLOR
+mainStroke.Thickness = 2
+mainStroke.Parent = mainFrame
+
+-- ---- Header (ลาก UI ได้ + ปุ่มปิด) ----
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 36)
+header.BackgroundTransparency = 1
+header.Active = true
+header.Parent = mainFrame
+
+local headerTitle = Instance.new("TextLabel")
+headerTitle.Name = "Title"
+headerTitle.Size = UDim2.new(1, -46, 1, 0)
+headerTitle.Position = UDim2.new(0, 10, 0, 0)
+headerTitle.BackgroundTransparency = 1
+headerTitle.Text = "191 AUDIO LOGGER [TEST]"
+headerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+headerTitle.Font = Enum.Font.GothamBold
+headerTitle.TextSize = 16
+headerTitle.TextXAlignment = Enum.TextXAlignment.Left
+headerTitle.Parent = header
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.fromOffset(26, 26)
+closeButton.Position = UDim2.new(1, -32, 0, 5)
+closeButton.BackgroundColor3 = ACCENT_COLOR
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 14
+closeButton.Parent = header
+Instance.new("UICorner", closeButton).CornerRadius = UDim.new(1, 0)
+
+closeButton.MouseEnter:Connect(function()
+	TweenService:Create(closeButton, TweenInfo.new(0.12), {
+		BackgroundColor3 = ACCENT_HOVER_COLOR,
+	}):Play()
+end)
+closeButton.MouseLeave:Connect(function()
+	TweenService:Create(closeButton, TweenInfo.new(0.12), {
+		BackgroundColor3 = ACCENT_COLOR,
+	}):Play()
+end)
+
+-- ลาก mainFrame ได้จากพื้นที่ header (ทั้งมือถือและพีซี)
+makeDraggable(header, mainFrame)
+
+-- ---- Page: Audio List ----
+local audioPage = Instance.new("Frame")
+audioPage.Name = "AudioPage"
+audioPage.Size = UDim2.new(1, -12, 1, -48)
+audioPage.Position = UDim2.new(0, 6, 0, 42)
+audioPage.BackgroundTransparency = 1
+audioPage.Parent = mainFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "AudioScroll"
+scrollFrame.Size = UDim2.fromScale(1, 1)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = audioPage
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 6)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scrollFrame
+
+-- ====== COPY POPUP (กด Ctrl+C เพื่อคัดลอก ID) ======
+local copyPopup = Instance.new("Frame")
+copyPopup.Name = "CopyPopup"
+copyPopup.Size = UDim2.fromOffset(280, 90)
+copyPopup.AnchorPoint = Vector2.new(0.5, 0.5)
+copyPopup.Position = UDim2.new(0.5, 0, 0.5, 0)
+copyPopup.BackgroundColor3 = BG_COLOR
+copyPopup.Visible = false
+copyPopup.ZIndex = 10
+copyPopup.Parent = screenGui
+
+Instance.new("UICorner", copyPopup).CornerRadius = UDim.new(0, 10)
+local popupStroke = Instance.new("UIStroke")
+popupStroke.Color = ACCENT_COLOR
+popupStroke.Thickness = 2
+popupStroke.Parent = copyPopup
+
+local popupLabel = Instance.new("TextLabel")
+popupLabel.Size = UDim2.new(1, -20, 0, 20)
+popupLabel.Position = UDim2.new(0, 10, 0, 8)
+popupLabel.BackgroundTransparency = 1
+popupLabel.Text = "กด Ctrl+C เพื่อคัดลอกไอดี"
+popupLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+popupLabel.Font = Enum.Font.GothamBold
+popupLabel.TextSize = 14
+popupLabel.Parent = copyPopup
+
+local popupTextBox = Instance.new("TextBox")
+popupTextBox.Size = UDim2.new(1, -20, 0, 30)
+popupTextBox.Position = UDim2.new(0, 10, 0, 32)
+popupTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+popupTextBox.Text = ""
+popupTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+popupTextBox.Font = Enum.Font.Code
+popupTextBox.TextSize = 14
+popupTextBox.ClearTextOnFocus = false
+popupTextBox.Parent = copyPopup
+Instance.new("UICorner", popupTextBox).CornerRadius = UDim.new(0, 6)
+
+local popupClose = Instance.new("TextButton")
+popupClose.Size = UDim2.fromOffset(24, 24)
+popupClose.Position = UDim2.new(1, -30, 0, 6)
+popupClose.BackgroundColor3 = ACCENT_COLOR
+popupClose.Text = "X"
+popupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+popupClose.Font = Enum.Font.GothamBold
+popupClose.TextSize = 14
+popupClose.Parent = copyPopup
+Instance.new("UICorner", popupClose).CornerRadius = UDim.new(1, 0)
+
+popupClose.MouseButton1Click:Connect(function()
+	copyPopup.Visible = false
+end)
+
+local function openCopyPopup(idText)
+	popupTextBox.Text = idText
+	copyPopup.Visible = true
+	popupTextBox:CaptureFocus()
+	popupTextBox.CursorPosition = #idText + 1
+	popupTextBox.SelectionStart = 1
+end
+
+-- ====== HELPERS ======
+local function extractIdFromString(str)
+	if type(str) ~= "string" then
+		return nil
+	end
+	return str:match("%d+")
+end
+
+-- อ่านไอดีเสียงจาก AudioPlayer
+-- ตามโครงสร้างจริงในเกม พร็อพเพอร์ตี้ที่เก็บ rbxassetid คือ "Asset"
+-- (บางเวอร์ชันอาจใช้ AssetId หรือเป็น Sound object ที่มี SoundId แทน จึงเช็คไว้ทุกแบบ)
+local function getAssetIdFromInstance(inst)
+	if inst:IsA("Sound") then
+		return inst.SoundId
+	end
+
+	-- ลองอ่านพร็อพเพอร์ตี้ "Asset" ก่อน (ตรงกับ AudioPlayer ในภาพ Properties)
+	local ok1, result1 = pcall(function()
+		return inst.Asset
+	end)
+	if ok1 and result1 and result1 ~= "" then
+		return result1
+	end
+
+	-- เผื่อบางอันใช้ AssetId แทน
+	local ok2, result2 = pcall(function()
+		return inst.AssetId
+	end)
+	if ok2 and result2 and result2 ~= "" then
+		return result2
+	end
+
+	return nil
+end
+
+-- ====== BUILD AUDIO ROWS ======
+local function createAudioRow(folder, layoutOrder)
+	-- ตรวจสอบว่ามี AudioPlayer หรือไม่
+	local audioPlayer = folder:FindFirstChild("AudioPlayer")
+	if not audioPlayer then
+		return nil
+	end
+
+	-- หา ID เพลงก่อน เพื่อเช็ค blacklist
+	local idText = "ไม่พบ ID"
+	local assetId = getAssetIdFromInstance(audioPlayer)
+	if assetId then
+		idText = extractIdFromString(assetId) or tostring(assetId)
+	end
+
+	-- ข้ามถ้าไอดีอยู่ใน blacklist
+	if BLACKLISTED_IDS[idText] then
+		return nil
+	end
+
+	local row = Instance.new("Frame")
+	row.Name = folder.Name
+	row.Size = UDim2.new(1, 0, 0, 60)
+	row.BackgroundColor3 = ROW_COLOR
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = layoutOrder
+	row.Parent = scrollFrame
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+	-- อนิเมชั่น slide-in + fade-in ของแต่ละ row
+	local delayTime = (layoutOrder - 1) * 0.05
+	delay(delayTime, function()
+		if not row or not row.Parent then return end
+		row.Position = UDim2.new(0.08, 0, 0, 0)
+		TweenService:Create(row, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 0,
+			Position = UDim2.new(0, 0, 0, 0),
+		}):Play()
+	end)
+
+	-- รูปเพลง (ฝั่งซ้าย)
+	local icon = Instance.new("ImageLabel")
+	icon.Size = UDim2.fromOffset(46, 46)
+	icon.Position = UDim2.new(0, 7, 0.5, 0)
+	icon.AnchorPoint = Vector2.new(0, 0.5)
+	icon.BackgroundColor3 = Color3.fromRGB(50, 50, 56)
+	icon.Image = "rbxassetid://4483345875"
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.Parent = row
+	Instance.new("UICorner", icon).CornerRadius = UDim.new(0, 6)
+
+	-- ชื่อ/ID เพลง (กลาง) -- โชว์ไอดีของ AudioPlayer แทนชื่อโฟลเดอร์
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -140, 1, 0)
+	nameLabel.Position = UDim2.new(0, 62, 0, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = idText
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 14
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Parent = row
+
+	-- ปุ่มก๊อป ID (ฝั่งขวา)
+	local copyButton = Instance.new("TextButton")
+	copyButton.Size = UDim2.fromOffset(64, 30)
+	copyButton.Position = UDim2.new(1, -71, 0.5, 0)
+	copyButton.AnchorPoint = Vector2.new(0, 0.5)
+	copyButton.BackgroundColor3 = ACCENT_COLOR
+	copyButton.Text = "ก๊อป"
+	copyButton.Font = Enum.Font.GothamBold
+	copyButton.TextSize = 14
+	copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	copyButton.Parent = row
+	Instance.new("UICorner", copyButton).CornerRadius = UDim.new(0, 6)
+
+	copyButton.MouseEnter:Connect(function()
+		TweenService:Create(copyButton, TweenInfo.new(0.12), {
+			BackgroundColor3 = ACCENT_HOVER_COLOR,
+			Size = UDim2.fromOffset(68, 32),
+		}):Play()
+	end)
+	copyButton.MouseLeave:Connect(function()
+		TweenService:Create(copyButton, TweenInfo.new(0.12), {
+			BackgroundColor3 = ACCENT_COLOR,
+			Size = UDim2.fromOffset(64, 30),
+		}):Play()
+	end)
+
+	copyButton.MouseButton1Click:Connect(function()
+		-- ลองคัดลอกเข้าคลิปบอร์ดอัตโนมัติก่อน (ใช้ได้เฉพาะบางตัวรันสคริปต์ที่รองรับ setclipboard)
+		if type(setclipboard) == "function" then
+			local ok = pcall(setclipboard, idText)
+			if ok then
+				local originalText = copyButton.Text
+				copyButton.Text = "คัดลอกแล้ว"
+				delay(1, function()
+					if copyButton and copyButton.Parent then
+						copyButton.Text = originalText
+					end
+				end)
+				return
+			end
+		end
+
+		-- ถ้าคัดลอกอัตโนมัติไม่ได้ (Roblox ปกติ) ให้เปิดกล่องที่เลือกข้อความให้พร้อม Ctrl+C
+		openCopyPopup(idText)
+	end)
+
+	return row
+end
+
+local function populateAudioList()
+	for _, child in ipairs(scrollFrame:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local folder = ReplicatedStorage
+	for _, name in ipairs(AUDIO_FOLDER_PATH) do
+		folder = folder and folder:FindFirstChild(name)
+		if not folder then
+			break
+		end
+	end
+
+	if not folder then
+		warn("[MusicListGui] ไม่พบโฟลเดอร์เสียงตามพาธที่กำหนด (แก้ AUDIO_FOLDER_PATH ในสคริปต์)")
+		return
+	end
+
+	local order = 0
+	for _, item in ipairs(folder:GetChildren()) do
+		if item:IsA("Folder") then
+			order = order + 1
+			createAudioRow(item, order)
+		end
+	end
+end
+
+populateAudioList()
+
+-- ====== ANIMATION HELPERS ======
+local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local tweenInfoClose = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+
+local isOpen = false
+
+local function openFrame()
+	isOpen = true
+	toggleButton.Visible = false -- ปุ่มเปิด/ปิดจะหายไปตอนเปิด UI
+
+	mainFrame.Visible = true
+	mainFrame.Size = UDim2.fromOffset(280, 280)
+	mainFrame.BackgroundTransparency = 1
+	local tween = TweenService:Create(mainFrame, tweenInfo, {
+		Size = UDim2.fromOffset(320, 320),
+		BackgroundTransparency = 0,
+	})
+	tween:Play()
+	-- Fade in children
+	for _, child in ipairs(mainFrame:GetDescendants()) do
+		if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("ScrollingFrame") then
+			child.Visible = true
+		end
+	end
+end
+
+local function closeFrame()
+	isOpen = false
+
+	local tween = TweenService:Create(mainFrame, tweenInfoClose, {
+		Size = UDim2.fromOffset(280, 280),
+		BackgroundTransparency = 1,
+	})
+	tween:Play()
+	tween.Completed:Connect(function()
+		mainFrame.Visible = false
+		mainFrame.Size = UDim2.fromOffset(320, 320)
+		mainFrame.BackgroundTransparency = 0
+		toggleButton.Visible = true -- ปุ่มเปิด/ปิดกลับมาอยู่ตำแหน่งเดิม
+	end)
+end
+
+-- Pulse animation บน toggleButton
+local pulseInfo = TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+TweenService:Create(toggleStroke, pulseInfo, {
+	Thickness = 5,
+	Transparency = 0.3,
+}):Play()
+
+-- Hover effect บน toggleButton
+toggleButton.MouseEnter:Connect(function()
+	TweenService:Create(toggleButton, TweenInfo.new(0.15), {
+		Size = UDim2.fromOffset(66, 66),
+	}):Play()
+end)
+toggleButton.MouseLeave:Connect(function()
+	TweenService:Create(toggleButton, TweenInfo.new(0.15), {
+		Size = UDim2.fromOffset(60, 60),
+	}):Play()
+end)
+
+-- ====== TOGGLE LOGIC ======
+-- กดปุ่มเปิด/ปิด -> เปิด UI (ปุ่มนี้จะหายไปเอง)
+toggleButton.MouseButton1Click:Connect(function()
+	if not isOpen then
+		populateAudioList()
+		openFrame()
+	end
+end)
+
+-- กดกากบาทที่มุมขวาบนของ UI -> ปิด UI แล้วปุ่มเปิด/ปิดกลับมาที่เดิม
+closeButton.MouseButton1Click:Connect(function()
+	if isOpen then
+		closeFrame()
+	end
+end)
